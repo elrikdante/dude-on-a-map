@@ -7,13 +7,19 @@ last_frame_count = 0
 frames = 0
 map = null
 hero = null
-
 #- constants
-
 for direction in ['NORTH','SOUTH','EAST','WEST']
+  @["#{direction}"] = direction
   dir = @["DIR_#{direction}"] = do ->
     {}
   dir[direction] = true
+  dir.dirname = direction
+  dir.movement = false
+  dir.marked_for_deletion = false
+
+  dir.delete = ->
+    @marked_for_deletion = true
+
 
 #- helper methods
 rgba = (r,g,b,a) ->
@@ -127,33 +133,52 @@ class Hero
                       @y,
                       @image.width,
                       @image.height
+
   move_to: (@x,@y,options={}) ->
     option_defaults =
       animate: true
     options.reverse_merge(option_defaults)
 
   check_moving: ->
-    @start_moving(@dir) if @moving
+    still_moving = false
+    for dir in Object.keys(@dir)
+      if @dir[dir].marked_for_deletion
+        delete @dir[dir] 
+      else
+        if @heading @dir[dir]
+          still_moving = true
+    @start_moving() if still_moving
+
+  heading: (dir) ->
+    @dir[dir]?.movement
 
   start_moving: (dir) ->
-    @moving= true
-    for dirname of dir
-      @dir[dirname] = true
-    [x_step, y_step] = [0,0]
-    if @dir.EAST? or @dir.WEST?
-      x_step = 4
-      x_step *= -1 if @dir.WEST?
-    if @dir.NORTH? or @dir.SOUTH?
-      y_step = 4
-      y_step *= -1 if @dir.NORTH?
-    @move_to(@x+x_step, @y+y_step)
+    if dir?
+      @dir[dir.dirname] = dir
+      @dir[dir.dirname].movement = true
+    else
+      for stale_dir in Object.keys(@dir)
+        if !@dir[stale_dir].movement
+          @dir[stale_dir].delete()
+
+    movement_values =
+      NORTH: {x: 0, y: -2}
+      SOUTH: {x: 0, y: 2}
+      EAST: {x: 2, y: 0}
+      WEST: {x: -2, y: 0}
+
+    x_off = y_off = 0
+    for mdir of @dir
+      if @dir[mdir].movement
+        console.log mdir
+        x_off += movement_values[mdir].x
+        y_off += movement_values[mdir].y
+    @move_to @x + x_off, @y + y_off
 
   stop_moving: (dir)->
-    for dirname of dir
-      delete @dir[dirname]
-    still_moving = for xdir of @dir
-      xdir
-    @moving = still_moving.length > 0
+    if old_dir = @dir[dir.dirname]
+      #old_dir.movement=false
+      true
 
 #- map
 map_data = [1, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,1,
@@ -198,7 +223,6 @@ for key in [0..255]
     button = KeyBoard.parse_key(key)
     KeyBoard["#{button}_pressed"] = ->
     KeyBoard["#{button}_released"] = ->
-
   catch exception
     console.log 'unabled to define helper method for ', key, KeyBoard.parse_key(key)
 
@@ -244,3 +268,4 @@ window.onload= ->
   hero = new Hero()
   game_loop()
   update_fps()
+  window.hero = hero
