@@ -9,15 +9,17 @@ map = null
 hero = null
 #- constants
 for direction in ['NORTH','SOUTH','EAST','WEST']
-  @["#{direction}"] = {NORTH: 1, SOUTH: 2, EAST: 4, WEST: 8}[direction]
-  @["DIR_#{direction}"] = new ->
-    @[direction] = true
-    @.dirname = window[direction]
-    @.movement = false
-    @.marked_for_deletion = false
-    @.delete = ->
-      @marked_for_deletion = true
-    @
+  @["#{direction}"] = direction
+  dir = @["DIR_#{direction}"] = do ->
+    {}
+  dir[direction] = true
+  dir.dirname = direction
+  dir.movement = false
+  dir.marked_for_deletion = false
+
+  dir.delete = ->
+    @marked_for_deletion = true
+
 
 #- helper methods
 rgba = (r,g,b,a) ->
@@ -113,7 +115,7 @@ class Hero
       width: 32
       height: 32
       image_src: 'images/link.png'
-      dir: 0
+      dir: {}
       moving: false
     options.reverse_merge(option_defaults)
     @.reverse_merge(options)
@@ -138,39 +140,45 @@ class Hero
     options.reverse_merge(option_defaults)
 
   check_moving: ->
-    if @moving
-      console.log 'moving'
-      moving_states = {}
-      moving_states[NORTH] = {x: 0, y: -1}
-      moving_states[SOUTH] = {x: 0, y: 1}
-      moving_states[EAST] = {x: 1, y: 0}
-      moving_states[WEST] = {x: -1, y: 0}
-      xo = yo = 0
-      for dir in Object.keys(moving_states)
-        if @dir & dir
-          xo += moving_states[dir].x
-          yo += moving_states[dir].y
-      @move_to @x + xo, @y + yo
+    still_moving = false
+    for dir in Object.keys(@dir)
+      if @dir[dir].marked_for_deletion
+        delete @dir[dir] 
+      else
+        if @heading @dir[dir]
+          still_moving = true
+    @start_moving() if still_moving
 
   heading: (dir) ->
-    @dir & dir.dirname
+    @dir[dir]?.movement
 
   start_moving: (dir) ->
-    @dir = switch dir.dirname | @dir
-      when 3,12 then dir
-      else dir.dirname | @dir
-    @moving = true
+    if dir?
+      @dir[dir.dirname] = dir
+      @dir[dir.dirname].movement = true
+    else
+      for stale_dir in Object.keys(@dir)
+        if !@dir[stale_dir].movement
+          @dir[stale_dir].delete()
+
+    movement_values =
+      NORTH: {x: 0, y: -2}
+      SOUTH: {x: 0, y: 2}
+      EAST: {x: 2, y: 0}
+      WEST: {x: -2, y: 0}
+
+    x_off = y_off = 0
+    for mdir of @dir
+      if @dir[mdir].movement
+        console.log mdir
+        x_off += movement_values[mdir].x
+        y_off += movement_values[mdir].y
+    @move_to @x + x_off, @y + y_off
 
   stop_moving: (dir)->
-    if (dir.EAST? and @heading(WEST)) or (dir.WEST? and @heading(EAST)) or (dir.NORTH? and @heading(SOUTH)) or (dir.SOUTH? and @heading(NORTH))
-      @dir = dir.dirname
-      return
-    @dir = switch pending_dir = @dir ^ dir.dirname
-      when 0
-        console.log 'stopped'
-        @moving = false
-        dir.dirname
-      else pending_dir
+    if old_dir = @dir[dir.dirname]
+      #old_dir.movement=false
+      true
 
 #- map
 map_data = [1, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,1,
