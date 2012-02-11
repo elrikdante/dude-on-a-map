@@ -8,18 +8,16 @@ frames = 0
 map = null
 hero = null
 #- constants
-for direction in ['NORTH','SOUTH','EAST','WEST']
-  @["#{direction}"] = direction
-  dir = @["DIR_#{direction}"] = do ->
-    {}
-  dir[direction] = true
-  dir.dirname = direction
-  dir.movement = false
-  dir.marked_for_deletion = false
-
-  dir.delete = ->
-    @marked_for_deletion = true
-
+for direction in ['NORTH','SOUTH','EAST','WEST', 'NORTH_EAST', 'NORTH_WEST', 'SOUTH_EAST','SOUTH_WEST']
+  @["#{direction}"] = {NORTH: 1, SOUTH: 2, EAST: 4, WEST: 8, NORTH_EAST: 5, NORTH_WEST: 9, SOUTH_EAST: 6, SOUTH_WEST: 10}[direction]
+  @["DIR_#{direction}"] = new ->
+    @[direction] = true
+    @.dirname = window[direction]
+    @.movement = false
+    @.marked_for_deletion = false
+    @.delete = ->
+      @marked_for_deletion = true
+    @
 
 #- helper methods
 rgba = (r,g,b,a) ->
@@ -140,45 +138,32 @@ class Hero
     options.reverse_merge(option_defaults)
 
   check_moving: ->
-    still_moving = false
-    for dir in Object.keys(@dir)
-      if @dir[dir].marked_for_deletion
-        delete @dir[dir] 
-      else
-        if @heading @dir[dir]
-          still_moving = true
-    @start_moving() if still_moving
-
-  heading: (dir) ->
-    @dir[dir]?.movement
+    if @moving
+      moving_states = {}
+      moving_states[NORTH] = {x: 0, y: -1}
+      moving_states[SOUTH] = {x: 0, y: 1}
+      moving_states[EAST] = {x: 1, y: 0}
+      moving_states[WEST] = {x: -1, y: 0}
+      xo = yo = 0
+      for dir in Object.keys(moving_states)
+        if !!(@dir & dir)
+          xo += moving_states[dir].x
+          yo += moving_states[dir].y
+      @move_to @x + xo, @y + yo
 
   start_moving: (dir) ->
-    if dir?
-      @dir[dir.dirname] = dir
-      @dir[dir.dirname].movement = true
-    else
-      for stale_dir in Object.keys(@dir)
-        if !@dir[stale_dir].movement
-          @dir[stale_dir].delete()
-
-    movement_values =
-      NORTH: {x: 0, y: -2}
-      SOUTH: {x: 0, y: 2}
-      EAST: {x: 2, y: 0}
-      WEST: {x: -2, y: 0}
-
-    x_off = y_off = 0
-    for mdir of @dir
-      if @dir[mdir].movement
-        console.log mdir
-        x_off += movement_values[mdir].x
-        y_off += movement_values[mdir].y
-    @move_to @x + x_off, @y + y_off
+    @dir = switch (dir | @dir)
+      when 3,12 then dir
+      else (if @moving then (dir | @dir) else dir)
+    @moving = true
 
   stop_moving: (dir)->
-    if old_dir = @dir[dir.dirname]
-      #old_dir.movement=false
-      true
+    @moving = switch @dir
+      when NORTH_EAST,NORTH_WEST,SOUTH_EAST,SOUTH_WEST then true
+      else false
+    @dir = switch (pending_dir = @dir ^ dir)
+      when 0, (NORTH|SOUTH),(EAST|WEST) then dir
+      else pending_dir
 
 #- map
 map_data = [1, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,1,
@@ -244,24 +229,24 @@ window.onkeyup = (key) ->
   key.released()
 
 KeyBoard.A_pressed = ->
-  hero.start_moving DIR_WEST
+  hero.start_moving WEST
 KeyBoard.A_released = ->
-  hero.stop_moving DIR_WEST
+  hero.stop_moving WEST
 
 KeyBoard.D_pressed = ->
-  hero.start_moving DIR_EAST
+  hero.start_moving EAST
 KeyBoard.D_released = ->
-  hero.stop_moving DIR_EAST
+  hero.stop_moving EAST
 
 KeyBoard.W_pressed = ->
-  hero.start_moving DIR_NORTH
+  hero.start_moving NORTH
 KeyBoard.W_released = ->
-  hero.stop_moving DIR_NORTH
+  hero.stop_moving NORTH
 
 KeyBoard.S_pressed = ->
-  hero.start_moving DIR_SOUTH
+  hero.start_moving SOUTH
 KeyBoard.S_released = ->
-  hero.stop_moving DIR_SOUTH
+  hero.stop_moving SOUTH
 
 window.KeyBoard = KeyBoard
 window.onload= ->
