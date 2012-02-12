@@ -85,7 +85,70 @@ game_loop= ->
   hero.check_moving()
   Highlighter.refresh()
   setTimeout(game_loop, 1000/60)
+#- Graphics
+window.Icon = class Icon
+  #- set up public attributes
+  failed: false
+  success: false
+  width: null
+  height: null
+  states: {}
+  frame_rate: 3
+  current_frame: 0
+  current_state: 0
+  target: null
 
+  constructor: (target,options={}) ->
+    @target = target if target?
+    @.reverse_merge(options)
+    #- set up a private attributes
+    image = new Image()
+    image.onerror = @on_fail
+    image.onload = @on_success
+
+    #- privileged methods
+    @.set_source = (new_src) ->
+     image.src = new_src
+    @.set_source(options.src) if options.src?
+
+    #- using the failure alerts and such, we can show a place holder for broken images, etc.
+    @.image_data = ->
+      if @success? then image else null
+    do =>
+      i = 0
+      for dir in [NORTH,SOUTH, EAST, WEST]
+        @states[dir] = {x_off: i * (@frame_rate * @width) , y_off: 0}
+        i++
+
+    #- return the final object
+    console.log @
+    @
+
+
+  on_fail: ->
+    console.log 'image failed'
+    @failed = true
+    delete @.success
+
+  on_success: ->
+    console.log 'image loaded'
+    @success = true
+    delete @.failed
+
+  x_offset: ->
+    frame = frames
+    offset = 0
+    #- what do you mean we don't have a state for that direction!
+    try
+      offset = @states[@target.dir].x_off
+    catch exception
+      flat_dir = @target.dir & ~(NORTH|SOUTH)
+      offset = @states[flat_dir].x_off
+    (@current_frame = (@current_frame + 1) % @frame_rate) if @target.moving and @target.ready_to_animate()
+    offset += (@current_frame * @width)
+    offset
+  y_offset: ->
+    0
 #- models
 class Turf
   constructor: (options={})->
@@ -128,6 +191,8 @@ class Turf
   bumped: (bumper) ->
 
 class Wall extends Turf
+  bumped: (bumper) ->
+    console.log 'You ran into a wall'
 Wall.prototype.attributes =
   gay: true
   image_src: 'images/wall.png'
@@ -154,29 +219,36 @@ class Hero
       width:  20
       height: 32
       image_src: 'images/goku.png'
-      dir: {}
+      image_width: 20
+      image_height: 32
+      frames:
+        1:
+          x_off: 20
+          t_off: 10
+      dir: SOUTH
       moving: false
+      icon: null
     options.reverse_merge(option_defaults)
     @.reverse_merge(options)
-    @image = new Image()
-    @image.src = @image_src
-    @image.width = @width
-    @image.height = @height
+    @icon = new Icon @,{width: @image_width, height: @image_height, src: @image_src}
     @move_to(@x,@y)
+
+  ready_to_animate: ->
+    ((frames % 4) == 0)
 
   heading: (dir) ->
     !!(@dir & dir)
 
   draw: ->
-    context.drawImage @image,
-                      0,
-                      0,
-                      @image.width,
-                      @image.height,
+    context.drawImage @icon.image_data(),
+                      @icon.x_offset(),
+                      @icon.y_offset(),
+                      @icon.width,
+                      @icon.height,
                       @x,
                       @y,
-                      @image.width,
-                      @image.height
+                      @icon.width,
+                      @icon.height
 
   move_to: (x,y,options={}) ->
     success = true
@@ -187,12 +259,13 @@ class Hero
     unless options.ignore_density
       #- normalize the coordinates, so any lay offer is negated
       [offx , offy] = [x, y]
-      offx += ~~(@width*0.85) if @heading(EAST)
-      offy += ~~(@height*0.85) if @heading(SOUTH)
+      offx += ~~(@width) if @heading(EAST)
+      offy += ~~(@height) if @heading(SOUTH)
       [tile_x ,tile_y] = pixel_coords_to_tile_coords(offx - (offx&31),offy + (offy&31))
       tile = map[tile_x][tile_y]
-      if tile? and @colliding_with tile
+      if tile? and @colliding_with(tile)?
         Highlighter.highlight(tile)
+        tile.bumped(@)
         success = false
     [@x,@y] = [x,y] if success
 
