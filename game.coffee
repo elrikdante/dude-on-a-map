@@ -28,6 +28,9 @@ rgba = (r,g,b,a) ->
 
 rgb = (r,g,b) -> rgba(r,g,b,1)
 
+pixel_coords_to_tile_coords = (x,y) ->
+  [(x >> 5),(y >> 5)]
+
 clear = ->
   context.fillStyle = rgb(0xd0,0xe7,0xf9)
   context.beginPath()
@@ -44,6 +47,28 @@ update_fps= ->
   last_frame_count = frames
   setTimeout(update_fps, 1000)
 
+get_dir = (loc1,loc2) ->
+  return NORTH_EAST if loc1.x < loc2.x and loc1.y > loc2.y
+  return NORTH_WEST if loc1.x > loc2.x and loc1.y > loc2.y
+  return SOUTH_WEST if loc1.x > loc2.x and loc1.y < loc2.y
+  return SOUTH_EAST if loc1.x < loc2.x and loc1.y < loc2.y
+  return EAST if loc1.x < loc2.x
+  return WEST if loc1.x > loc2.x
+  return SOUTH if loc1.y > loc2.y
+  return NORTH
+
+class Highlighter
+  @.current_hightlight = null
+  @.highlight = (target) ->
+    context.strokeStyle = rgb(0xff,0xff,0x00)
+    context.beginPath()
+    context.strokeRect(target.x,target.y, target.width, target.height)
+    context.closePath()
+    context.fill()
+    @current_hightlight = target
+  @.refresh = ->
+    @highlight(@current_hightlight) if @current_hightlight? and (frames%4==0)
+
 Object.prototype.reverse_merge= (other_hash) ->
   for attrib of other_hash
     @[attrib] = other_hash[attrib] if !@[attrib]?
@@ -58,11 +83,13 @@ game_loop= ->
       turf.draw()
   hero.draw()
   hero.check_moving()
+  Highlighter.refresh()
   setTimeout(game_loop, 1000/60)
 
 #- models
 class Turf
   constructor: (options={})->
+    options.reverse_merge @attributes if @attributes?
     option_defaults =
        image_src: 'images/turf.png'
        x: 0
@@ -73,6 +100,7 @@ class Turf
        frames: 0
        animated: false
        frame_rate: 0
+       density: 0
     options.reverse_merge(option_defaults)
     @.reverse_merge(options)
     @image = new Image()
@@ -86,33 +114,46 @@ class Turf
                       0,
                       @image.width,
                       @image.height,
-                      @x << 5,
-                      @y << 5,
+                      @x,
+                      @y,
                       @image.width,
                       @image.height
     @animate() if @animated and @ready_to_animate()
+
   animate: ->
 
   ready_to_animate: ->
     !!((frames%@frame_rate)==0)
 
+  bumped: (bumper) ->
+
+class Wall extends Turf
+Wall.prototype.attributes =
+  gay: true
+  image_src: 'images/wall.png'
+  density: true
+
 class Water extends Turf
-  constructor: (options={}) ->
-    @image_srcs = {0: 'images/water0.png', 1: 'images/water1.png'}
-    option_defaults={frames: 2,frame_rate: 20,animated: true, image_src: 'images/water0.png'}
-    super options.reverse_merge(option_defaults)
   animate: ->
     @frame = (@frame+1) % @frames
     @image.src = @image_srcs[@frame]
+
+Water.prototype.attributes =
+  frames: 2
+  frame_rate: 20
+  animated: true
+  image_src: 'images/water0.png'
+  density: true
+  image_srcs:  {0: 'images/water0.png', 1: 'images/water1.png'}
 
 class Hero
   constructor: (options={})->
     option_defaults =
       x: 0
       y: 0
-      width: 32
+      width:  20
       height: 32
-      image_src: 'images/link.png'
+      image_src: 'images/goku.png'
       dir: {}
       moving: false
     options.reverse_merge(option_defaults)
@@ -121,6 +162,11 @@ class Hero
     @image.src = @image_src
     @image.width = @width
     @image.height = @height
+    @move_to(@x,@y)
+
+  heading: (dir) ->
+    !!(@dir & dir)
+
   draw: ->
     context.drawImage @image,
                       0,
@@ -132,10 +178,41 @@ class Hero
                       @image.width,
                       @image.height
 
-  move_to: (@x,@y,options={}) ->
+  move_to: (x,y,options={}) ->
+    success = true
     option_defaults =
       animate: true
+      ignore_density: false
     options.reverse_merge(option_defaults)
+    unless options.ignore_density
+      #- normalize the coordinates, so any lay offer is negated
+      [offx , offy] = [x, y]
+      offx += ~~(@width*0.85) if @heading(EAST)
+      offy += ~~(@height*0.85) if @heading(SOUTH)
+      [tile_x ,tile_y] = pixel_coords_to_tile_coords(offx - (offx&31),offy + (offy&31))
+      tile = map[tile_x][tile_y]
+      if tile? and @colliding_with tile
+        Highlighter.highlight(tile)
+        success = false
+    [@x,@y] = [x,y] if success
+
+  #- if colliding_with?(obj)
+  colliding_with: (turf,options={}) ->
+    options.reverse_merge {x: @x, y: @y}
+    left1 = options.x
+    left2= turf.x
+    right1 = options.x + @width
+    right2 = turf.x + turf.width
+    top1 = options.y
+    top2 = turf.y
+    bottom1 = options.y + @height
+    bottom2 = turf.y + turf.height
+    return null if !turf.density
+    return null if bottom1 < top2
+    return null if top1 > bottom2
+    return null if right1 < left2
+    return null if left1 > right2
+    true
 
   check_moving: ->
     if @moving
@@ -166,33 +243,32 @@ class Hero
       else pending_dir
 
 #- map
-map_data = [1, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,1,
+map_data = [0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0,
             0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0,
-            0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0,
-            0, 0 ,0 ,1 ,1 ,1 ,1 ,0 ,0 ,0,
-            0, 0 ,1 ,1 ,1 ,1 ,1 ,1 ,0 ,0,
-            0, 0 ,1 ,1 ,1 ,1 ,1 ,1 ,0 ,0,
-            0, 0 ,0 ,1 ,1 ,1 ,1 ,0 ,0 ,0,
+            0, 0 ,2 ,2 ,0 ,2 ,2 ,0 ,0 ,0,
+            0, 0 ,2 ,1 ,1 ,1 ,2 ,0 ,0 ,0,
+            0, 0 ,2 ,1 ,1 ,1 ,2 ,0 ,0 ,0,
+            0, 0 ,2 ,2 ,1 ,2 ,2 ,0 ,0 ,0,
             0, 0 ,0 ,0 ,1 ,0 ,0 ,0 ,0 ,0,
             0, 0 ,0 ,0 ,1 ,0 ,0 ,0 ,0 ,0,
-            1, 0 ,0 ,0 ,1 ,0 ,0 ,0 ,0 ,1 ]
+            0, 0 ,0 ,0 ,1 ,0 ,0 ,0 ,0 ,0,
+            0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0]
 
-tile_mappings = {
-  0: Turf,
+
+tile_mappings =
+  0: Turf
   1: Water
-}
+  2: Wall
 
 map = for x in [0..9]
-        for y in [0..9]
-          screen_x = x
-          screen_y = 9 - y
-          index = screen_y * 10 + screen_x
-          struct = map_data[index]
-          options = {
-            x: x,
-            y: y
-          }
-          new tile_mappings[struct](options)
+  for y in [0..9]
+    index = y * 10 + x
+    struct = map_data[index]
+    options = {
+      x: x << 5,
+      y: y << 5
+    }
+    new tile_mappings[struct](options)
 
 #- keyboard
 
