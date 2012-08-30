@@ -85,6 +85,7 @@ game_loop= ->
   hero.check_moving()
   Highlighter.refresh()
   setTimeout(game_loop, 1000/60)
+
 #- Graphics
 window.Icon = class Icon
   #- set up public attributes
@@ -103,8 +104,8 @@ window.Icon = class Icon
     @.reverse_merge(options)
     #- set up a private attributes
     image = new Image()
-    image.onerror = @on_fail
-    image.onload = @on_success
+    image.addEventListener('error', @on_fail, false)
+    image.addEventListener('load', @on_success, false)
 
     #- privileged methods
     @.set_source = (new_src) ->
@@ -121,7 +122,6 @@ window.Icon = class Icon
         i++
 
     #- return the final object
-    console.log @
     @
 
 
@@ -131,7 +131,6 @@ window.Icon = class Icon
     delete @.success
 
   on_success: ->
-    console.log 'image loaded'
     @success = true
     delete @.failed
 
@@ -191,45 +190,46 @@ class Turf
   bumped: (bumper) ->
 
 class Wall extends Turf
+
+  @prototype.attributes =
+    gay: true
+    image_src: 'images/wall.png'
+    density: true
   bumped: (bumper) ->
     console.log 'You ran into a wall'
-Wall.prototype.attributes =
-  gay: true
-  image_src: 'images/wall.png'
-  density: true
 
 class Water extends Turf
   animate: ->
     @frame = (@frame+1) % @frames
     @image.src = @image_srcs[@frame]
 
-Water.prototype.attributes =
-  frames: 2
-  frame_rate: 20
-  animated: true
-  image_src: 'images/water0.png'
-  density: true
-  image_srcs:  {0: 'images/water0.png', 1: 'images/water1.png'}
+  @prototype.attributes =
+    frames: 2
+    frame_rate: 20
+    animated: true
+    image_src: 'images/water0.png'
+    density: true
+    image_srcs:  {0: 'images/water0.png', 1: 'images/water1.png'}
 
 class Hero
+  @prototype.attributes=
+    x: 0
+    y: 0
+    width:  20
+    height: 32
+    image_src: 'images/goku.png'
+    image_width: 20
+    image_height: 32
+    frames:
+      1:
+        x_off: 20
+        t_off: 10
+    dir: SOUTH
+    moving: false
+    icon: null
   constructor: (options={})->
-    option_defaults =
-      x: 0
-      y: 0
-      width:  20
-      height: 32
-      image_src: 'images/goku.png'
-      image_width: 20
-      image_height: 32
-      frames:
-        1:
-          x_off: 20
-          t_off: 10
-      dir: SOUTH
-      moving: false
-      icon: null
-    options.reverse_merge(option_defaults)
-    @.reverse_merge(options)
+    @.reverse_merge @attributes
+    @.reverse_merge options
     @icon = new Icon @,{width: @image_width, height: @image_height, src: @image_src}
     @move_to(@x,@y)
 
@@ -318,13 +318,13 @@ class Hero
 #- map
 map_data = [0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0,
             0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0,
+            0, 0 ,2 ,2 ,2 ,2 ,2 ,0 ,0 ,0,
+            0, 0 ,2 ,1 ,1 ,1 ,2 ,0 ,0 ,0,
+            0, 0 ,2 ,1 ,1 ,1 ,2 ,0 ,0 ,0,
             0, 0 ,2 ,2 ,0 ,2 ,2 ,0 ,0 ,0,
-            0, 0 ,2 ,1 ,1 ,1 ,2 ,0 ,0 ,0,
-            0, 0 ,2 ,1 ,1 ,1 ,2 ,0 ,0 ,0,
-            0, 0 ,2 ,2 ,1 ,2 ,2 ,0 ,0 ,0,
-            0, 0 ,0 ,0 ,1 ,0 ,0 ,0 ,0 ,0,
-            0, 0 ,0 ,0 ,1 ,0 ,0 ,0 ,0 ,0,
-            0, 0 ,0 ,0 ,1 ,0 ,0 ,0 ,0 ,0,
+            0, 0 ,0 ,2 ,0 ,2 ,0 ,0 ,0 ,0,
+            0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0,
+            0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0,
             0, 0 ,0 ,0 ,0 ,0 ,0 ,0 ,0 ,0]
 
 
@@ -360,22 +360,28 @@ for key in [0..255]
   catch exception
     console.log 'unabled to define helper method for ', key, KeyBoard.parse_key(key)
 
-KeyboardEvent.prototype.key_code= ->
-  @keyCode || @charCode
 
-KeyboardEvent.prototype.pressed = ->
-  event = KeyBoard.parse_event @, 'pressed'
-  KeyBoard[event].call()
+((kb_event) ->
+  kb_event.key_code= ->
+    @keyCode || @charCode
 
-KeyboardEvent.prototype.released = ->
-  event = KeyBoard.parse_event @, 'released'
-  KeyBoard[event].call()
+  kb_event.pressed = ->
+    event = KeyBoard.parse_event @, 'pressed'
+    KeyBoard[event].call()
 
-window.onkeydown = (key) ->
+  kb_event.released = ->
+    event = KeyBoard.parse_event @, 'released'
+    KeyBoard[event].call()
+
+)(KeyboardEvent.prototype)
+
+document.addEventListener('keydown', (key) ->
   key.pressed()
+, false)
 
-window.onkeyup = (key) ->
+document.addEventListener('keyup', (key) ->
   key.released()
+, false)
 
 KeyBoard.A_pressed = ->
   hero.start_moving WEST
@@ -397,9 +403,14 @@ KeyBoard.S_pressed = ->
 KeyBoard.S_released = ->
   hero.stop_moving SOUTH
 
+KeyBoard.L_released = ->
+  alert 'you pressed L'
+
 window.KeyBoard = KeyBoard
-window.onload= ->
+
+window.addEventListener('load', ->
   hero = new Hero()
   game_loop()
   update_fps()
   window.hero = hero
+, false)
