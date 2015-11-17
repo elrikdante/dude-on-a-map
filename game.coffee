@@ -192,7 +192,6 @@ class Turf
 class Wall extends Turf
 
   @prototype.attributes =
-    gay: true
     image_src: 'images/wall.png'
     density: true
   bumped: (bumper) ->
